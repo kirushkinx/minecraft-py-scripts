@@ -2,8 +2,10 @@ import time
 import minescript
 
 class TriggerBot:
+    # - Configuration -
     ATTACK_DISTANCE = 3.0
     ATTACK_COOLDOWN = 0.6
+    # - -
 
     def __init__(self):
         self.running = False

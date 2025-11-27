@@ -4,11 +4,13 @@ import minescript
 
 
 class AimBot:
+    # - Configuration -
     SEARCH_RADIUS = 4.0
     MIN_SMOOTHNESS = 0.18
     MAX_SMOOTHNESS = 0.42
     UPDATE_INTERVAL = 0.015
     PREDICTION_MULTIPLIER = 0.35
+    # - -
 
     def __init__(self):
         self.running = False
