@@ -23,8 +23,12 @@ class TriggerBot:
 
     def _tick(self):
         target = minescript.player_get_targeted_entity(max_distance=self.ATTACK_DISTANCE)
-        if target:
+        if target and self._is_player(target):
             self._try_attack()
+
+    def _is_player(self, entity):
+        player_names = [p.name for p in minescript.players()]
+        return hasattr(entity, 'name') and entity.name in player_names
 
     def _try_attack(self):
         current_time = time.time()
