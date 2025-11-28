@@ -10,9 +10,14 @@ class AimBot:
     MAX_SMOOTHNESS = 0.35
     UPDATE_INTERVAL = 0.015
     PREDICTION_MULTIPLIER = 0.35
-    IGNORE_WHILE_HAND_EMPTY = True
     FOV = 180.0
     TARGET_BONE = 'closest'  # 'head', 'neck', 'torso', 'legs', 'feet', 'closest'
+
+    ITEM_FILTER_MODE = "whitelist"  # "whitelist" or "blacklist"
+    ITEM_FILTER = [
+        "minecraft:netherite_sword",
+        "minecraft:diamond_sword",
+    ]
     # - -
 
     BONE_OFFSETS = {
@@ -41,7 +46,7 @@ class AimBot:
             time.sleep(self.UPDATE_INTERVAL)
 
     def _tick(self):
-        if self.IGNORE_WHILE_HAND_EMPTY and self._is_hand_empty():
+        if not self._is_item_allowed():
             self.locked_target_name = None
             return
 
@@ -54,12 +59,54 @@ class AimBot:
             self.last_target_pos = None
             self.locked_target_name = None
 
-    def _is_hand_empty(self):
+    def _extract_item_id(self, item):
+        try:
+            if hasattr(item, "id") and isinstance(item.id, str):
+                return item.id
+            if hasattr(item, "name") and isinstance(item.name, str):
+                return item.name
+
+            s = str(item)
+
+            marker = 'id:"'
+            idx = s.find(marker)
+            if idx != -1:
+                start = idx + len(marker)
+                end = s.find('"', start)
+                if end != -1:
+                    return s[start:end]
+
+            marker = "item='"
+            idx = s.find(marker)
+            if idx != -1:
+                start = idx + len(marker)
+                end = s.find("'", start)
+                if end != -1:
+                    return s[start:end]
+
+            return None
+        except:
+            return None
+
+    def _is_item_allowed(self):
         try:
             hand_items = minescript.player_hand_items()
-            return hand_items.main_hand is None
+            item = hand_items.main_hand
+
+            if item is None:
+                return False if self.ITEM_FILTER_MODE == "whitelist" else True
+
+            item_id = self._extract_item_id(item)
+            if not item_id:
+                return True
+
+            if self.ITEM_FILTER_MODE == "whitelist":
+                return item_id in self.ITEM_FILTER
+            else:
+                return item_id not in self.ITEM_FILTER
+
         except:
-            return False
+            return True
 
     def _get_target_position(self, target):
         target_pos = list(target.position)
