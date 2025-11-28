@@ -10,6 +10,7 @@ class AimBot:
     MAX_SMOOTHNESS = 0.42
     UPDATE_INTERVAL = 0.015
     PREDICTION_MULTIPLIER = 0.35
+    IGNORE_WHILE_HAND_EMPTY = True
     # - -
 
     def __init__(self):
@@ -28,6 +29,9 @@ class AimBot:
             time.sleep(self.UPDATE_INTERVAL)
 
     def _tick(self):
+        if self.IGNORE_WHILE_HAND_EMPTY and self._is_hand_empty():
+            return
+
         target = self._find_nearest_player()
         if target:
             self._smooth_aim(target)
@@ -36,6 +40,10 @@ class AimBot:
         else:
             self.last_target_pos = None
             self.locked_target_name = None
+
+    def _is_hand_empty(self):
+        hand_items = minescript.player_hand_items()
+        return hand_items.main_hand is None
 
     def _find_nearest_player(self):
         all_players = minescript.players()

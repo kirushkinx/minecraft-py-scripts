@@ -5,6 +5,7 @@ class TriggerBot:
     # - Configuration -
     ATTACK_DISTANCE = 3.0
     ATTACK_COOLDOWN = 0.6
+    IGNORE_WHILE_HAND_EMPTY = True
     # - -
 
     def __init__(self):
@@ -22,13 +23,22 @@ class TriggerBot:
             time.sleep(0.05)
 
     def _tick(self):
+        if self.IGNORE_WHILE_HAND_EMPTY and self._is_hand_empty():
+            return
+
         target = minescript.player_get_targeted_entity(max_distance=self.ATTACK_DISTANCE)
         if target and self._is_player(target):
             self._try_attack()
 
+    def _is_hand_empty(self):
+        hand_items = minescript.player_hand_items()
+        return hand_items.main_hand is None
+
     def _is_player(self, entity):
+        if not hasattr(entity, 'name'):
+            return False
         player_names = [p.name for p in minescript.players()]
-        return hasattr(entity, 'name') and entity.name in player_names
+        return entity.name in player_names
 
     def _try_attack(self):
         current_time = time.time()
