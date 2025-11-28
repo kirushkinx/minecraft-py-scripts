@@ -6,17 +6,29 @@ import minescript
 class AimBot:
     # - Configuration -
     SEARCH_RADIUS = 4.0
-    MIN_SMOOTHNESS = 0.18
-    MAX_SMOOTHNESS = 0.42
+    MIN_SMOOTHNESS = 0.15
+    MAX_SMOOTHNESS = 0.35
     UPDATE_INTERVAL = 0.015
     PREDICTION_MULTIPLIER = 0.35
     IGNORE_WHILE_HAND_EMPTY = True
+    FOV = 180.0
+    TARGET_BONE = 'closest'  # 'head', 'neck', 'torso', 'legs', 'feet', 'closest'
     # - -
+
+    BONE_OFFSETS = {
+        'head': 1.65,
+        'neck': 1.3,
+        'torso': 1.0,
+        'legs': 0.5,
+        'feet': 0.1,
+        'closest': None
+    }
 
     def __init__(self):
         self.running = False
         self.last_target_pos = None
         self.locked_target_name = None
+        self.mouse_sensitivity = 0.5
 
     def start(self):
         self.running = True
@@ -30,25 +42,84 @@ class AimBot:
 
     def _tick(self):
         if self.IGNORE_WHILE_HAND_EMPTY and self._is_hand_empty():
+            self.locked_target_name = None
             return
 
         target = self._find_nearest_player()
         if target:
             self._smooth_aim(target)
-            self.last_target_pos = target.position
+            self.last_target_pos = self._get_target_position(target)
             self.locked_target_name = target.name
         else:
             self.last_target_pos = None
             self.locked_target_name = None
 
     def _is_hand_empty(self):
-        hand_items = minescript.player_hand_items()
-        return hand_items.main_hand is None
+        try:
+            hand_items = minescript.player_hand_items()
+            return hand_items.main_hand is None
+        except:
+            return False
+
+    def _get_target_position(self, target):
+        target_pos = list(target.position)
+
+        if self.TARGET_BONE == 'closest':
+            return self._get_closest_point(target)
+
+        bone_height = self.BONE_OFFSETS.get(self.TARGET_BONE, 1.5)
+        target_pos[1] += bone_height
+
+        if self.last_target_pos:
+            velocity_x = target_pos[0] - self.last_target_pos[0]
+            velocity_y = target_pos[1] - self.last_target_pos[1]
+            velocity_z = target_pos[2] - self.last_target_pos[2]
+
+            target_pos[0] += velocity_x * self.PREDICTION_MULTIPLIER
+            target_pos[1] += velocity_y * self.PREDICTION_MULTIPLIER
+            target_pos[2] += velocity_z * self.PREDICTION_MULTIPLIER
+
+        return target_pos
+
+    def _get_closest_point(self, target):
+        my_pos = minescript.player_position()
+        my_eye_y = my_pos[1] + 1.62
+
+        target_x, target_y, target_z = target.position
+
+        best_point = None
+        min_dist = float('inf')
+
+        for bone_name, height in self.BONE_OFFSETS.items():
+            if bone_name == 'closest' or height is None:
+                continue
+
+            test_y = target_y + height
+            dx = target_x - my_pos[0]
+            dy = test_y - my_eye_y
+            dz = target_z - my_pos[2]
+            dist = math.sqrt(dx * dx + dy * dy + dz * dz)
+
+            if dist < min_dist:
+                min_dist = dist
+                best_point = [target_x, test_y, target_z]
+
+        if self.last_target_pos and best_point:
+            velocity_x = best_point[0] - self.last_target_pos[0]
+            velocity_y = best_point[1] - self.last_target_pos[1]
+            velocity_z = best_point[2] - self.last_target_pos[2]
+
+            best_point[0] += velocity_x * self.PREDICTION_MULTIPLIER
+            best_point[1] += velocity_y * self.PREDICTION_MULTIPLIER
+            best_point[2] += velocity_z * self.PREDICTION_MULTIPLIER
+
+        return best_point if best_point else [target_x, target_y + 1.5, target_z]
 
     def _find_nearest_player(self):
         all_players = minescript.players()
         my_name = minescript.player().name
         my_pos = minescript.player_position()
+        my_yaw = minescript.player_orientation()[0]
 
         if self.locked_target_name:
             for p in all_players:
@@ -57,12 +128,16 @@ class AimBot:
                     dy = p.position[1] - my_pos[1]
                     dz = p.position[2] - my_pos[2]
                     dist = math.sqrt(dx * dx + dy * dy + dz * dz)
+
                     if dist <= self.SEARCH_RADIUS:
-                        return p
+                        fov_angle = self._get_fov_to_entity(p, my_pos, my_yaw)
+                        if fov_angle <= self.FOV:
+                            return p
+
             self.locked_target_name = None
 
         nearest = None
-        min_dist = self.SEARCH_RADIUS
+        min_fov = self.FOV
 
         for p in all_players:
             if p.name == my_name:
@@ -73,11 +148,25 @@ class AimBot:
             dz = p.position[2] - my_pos[2]
             dist = math.sqrt(dx * dx + dy * dy + dz * dz)
 
-            if dist < min_dist:
-                min_dist = dist
+            if dist > self.SEARCH_RADIUS:
+                continue
+
+            fov_angle = self._get_fov_to_entity(p, my_pos, my_yaw)
+
+            if fov_angle < min_fov:
+                min_fov = fov_angle
                 nearest = p
 
         return nearest
+
+    def _get_fov_to_entity(self, entity, my_pos, my_yaw):
+        dx = entity.position[0] - my_pos[0]
+        dz = entity.position[2] - my_pos[2]
+
+        target_yaw = math.degrees(math.atan2(-dx, dz))
+        yaw_diff = abs(self._normalize_angle(target_yaw - my_yaw))
+
+        return yaw_diff
 
     def _normalize_angle(self, angle):
         while angle > 180:
@@ -90,22 +179,11 @@ class AimBot:
         my_pos = minescript.player_position()
         my_rot = minescript.player_orientation()
 
-        target_pos = target.position
+        target_pos = self._get_target_position(target)
 
-        predicted_x = target_pos[0]
-        predicted_y = target_pos[1] + 1.5
-        predicted_z = target_pos[2]
-
-        if self.last_target_pos:
-            velocity_x = target_pos[0] - self.last_target_pos[0]
-            velocity_z = target_pos[2] - self.last_target_pos[2]
-
-            predicted_x += velocity_x * self.PREDICTION_MULTIPLIER
-            predicted_z += velocity_z * self.PREDICTION_MULTIPLIER
-
-        dx = predicted_x - my_pos[0]
-        dy = predicted_y - (my_pos[1] + 1.62)
-        dz = predicted_z - my_pos[2]
+        dx = target_pos[0] - my_pos[0]
+        dy = target_pos[1] - (my_pos[1] + 1.62)
+        dz = target_pos[2] - my_pos[2]
 
         distance = math.sqrt(dx * dx + dz * dz)
         target_yaw = math.degrees(math.atan2(-dx, dz))
@@ -122,6 +200,8 @@ class AimBot:
 
         new_yaw = current_yaw + yaw_diff * smoothness
         new_pitch = current_pitch + pitch_diff * smoothness
+
+        new_pitch = max(-90.0, min(90.0, new_pitch))
 
         minescript.player_set_orientation(new_yaw, new_pitch)
 
