@@ -15,6 +15,7 @@ class AimBot:
     def __init__(self):
         self.running = False
         self.last_target_pos = None
+        self.locked_target_name = None
 
     def start(self):
         self.running = True
@@ -31,13 +32,26 @@ class AimBot:
         if target:
             self._smooth_aim(target)
             self.last_target_pos = target.position
+            self.locked_target_name = target.name
         else:
             self.last_target_pos = None
+            self.locked_target_name = None
 
     def _find_nearest_player(self):
         all_players = minescript.players()
         my_name = minescript.player().name
         my_pos = minescript.player_position()
+
+        if self.locked_target_name:
+            for p in all_players:
+                if p.name == self.locked_target_name:
+                    dx = p.position[0] - my_pos[0]
+                    dy = p.position[1] - my_pos[1]
+                    dz = p.position[2] - my_pos[2]
+                    dist = math.sqrt(dx * dx + dy * dy + dz * dz)
+                    if dist <= self.SEARCH_RADIUS:
+                        return p
+            self.locked_target_name = None
 
         nearest = None
         min_dist = self.SEARCH_RADIUS
